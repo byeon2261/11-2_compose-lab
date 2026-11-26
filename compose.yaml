@@ -1,0 +1,9 @@
+name: compose-lab
+
+services:
+  web:
+    image: nginx:1.30.8-alpine
+    ports:
+      - "127.0.0.1:8082:80"
+    volumes:
+      - ./site:/usr/share/nginx/html:ro

@@ -49,3 +49,49 @@ docker compose logs --tail 20 web
 ```
 ./site(호스트): /usr/share/nginx/html:ro(컨테이너) = 둘을 서로 연결시킨다.
 
+#### 연결 적용과 변경 반영
+
+마운트 설정을 적용하고, 출력된 웹 컨테이너 ID를 기록한다.
+
+```powershell
+docker compose config --quiet
+docker compose up -d
+docker compose ps -q web
+```
+
+브라우저에서 `http://localhost:8082/`를 새로 고쳐 직접 만든 화면을 확인한다. 이어서 호스트 `site/index.html`의 `<h1>` 문구를 `바인드 마운트 변경 확인`으로 편집·저장한 뒤 브라우저에서 강력 새로 고침한다.
+
+화면 문구가 바뀌면 `docker compose ps -q web`을 다시 실행해 앞의 ID와 비교한다. **ID는 그대로인데 화면은 바뀐다.** 같은 컨테이너가 연결된 호스트 폴더의 새 내용을 읽은 것이다. 바인드 마운트
+
+compose.yaml에 내용을 추가해주고 nginx.conf파일을 추가한다.
+
+```yaml
+name: compose-lab
+
+services:
+  ...
+
+  files:
+    image: python:3.12-slim
+    command:
+      - sh
+      - -c
+      - mkdir -p /data && exec python -m http.server 8000 --directory /data
+```
+
+compose up을 실행하면 터미널 files이 추가된다.
+
+#### 메모 파일의 전체 전달 경로
+
+이번에는 돌아온 내용을 분명하게 확인할 수 있도록 메모를 만든다. `files` 안의 `/data/memo.txt`에 내용을 쓰고 읽는다. `python -c`는 뒤의 문자열을 Python 코드로 실행한다.
+
+```powershell
+docker compose exec files python -c "from pathlib import Path; Path('/data/memo.txt').write_text('container layer memo', encoding='utf-8')"
+docker compose exec files python -c "from pathlib import Path; print(Path('/data/memo.txt').read_text(encoding='utf-8'))"
+```
+
+첫 명령이 파일을 쓰고, 두 번째 명령이 `container layer memo`를 출력한다.
+
+이제 브라우저에서 `http://localhost:8082/files/memo.txt`를 열거나 화면의 파일 링크를 누른다. 이번 요청은 **브라우저 → 호스트 8082번 → 웹 컨테이너의 Nginx(80번) → 파일 서버(8000번) → 메모 파일**을 거친다. 브라우저에 같은 메모 내용이 표시되는지 확인한다.
+
+지금 생성한 파일은 compose가 내려가면 컨테이너가 삭제되고 파일도 같이 삭제된다.

@@ -18,3 +18,17 @@ services:
       - sh
       - -c
       - mkdir -p /data && exec python -m http.server 8000 --directory /data
+    volumes:
+      - lab-data:/data
+
+  writer:
+    image: python:3.12-slim
+    command:
+      - python
+      - -c
+      - "from pathlib import Path; path = Path('/data/memo.txt'); path.write_text('memo from writer', encoding='utf-8'); print(path.read_text(encoding='utf-8'))"
+    volumes:
+      - lab-data:/data
+
+volumes:
+  lab-data:

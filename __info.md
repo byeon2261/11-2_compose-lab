@@ -95,3 +95,71 @@ docker compose exec files python -c "from pathlib import Path; print(Path('/data
 이제 브라우저에서 `http://localhost:8082/files/memo.txt`를 열거나 화면의 파일 링크를 누른다. 이번 요청은 **브라우저 → 호스트 8082번 → 웹 컨테이너의 Nginx(80번) → 파일 서버(8000번) → 메모 파일**을 거친다. 브라우저에 같은 메모 내용이 표시되는지 확인한다.
 
 지금 생성한 파일은 compose가 내려가면 컨테이너가 삭제되고 파일도 같이 삭제된다.
+
+### 이름 있는 볼륨과 데이터 수명
+
+#### 이름 있는 볼륨의 연결
+
+다음에는 파일을 컨테이너와 별도 수명의 저장 공간에 둔다. 먼저 현재 프로젝트를 정리한다.
+
+```powershell
+docker compose down
+```
+
+컨테이너와 기본 네트워크가 제거된 상태에서 `compose.yaml`을 아래 전체 내용으로 저장한다. 추가할 곳은 `files.volumes`와 최상위 `volumes`다.
+
+```yaml
+name: compose-lab
+
+services:
+  ...
+    volumes:
+      - lab-data:/data
+
+volumes:
+  lab-data:
+```
+
+`lab-data:/data`는 Docker가 관리하는 **이름 있는 볼륨**을 파일 서버의 `/data`에 연결한다. 실제 이름은 프로젝트 이름이 붙은 `compose-lab_lab-data`이며, 호스트의 `site` 폴더와는 별도 저장 공간이다.
+
+compose up을 하면 Volumes에 compose-lab_lab-data이 생성된다. 다시 파일을 생성하고 compose삭제 후 재실행해되 파일을 확인 할 수 있다.
+
+#### 볼륨 삭제와 저장 범위
+
+현재 화면 제목 `바인드 마운트 변경 확인`과 메모 내용 `named volume memo`를 기록한다. 호스트의 `site/index.html`과 볼륨의 `/data/memo.txt`가 삭제 명령의 영향을 어떻게 받는지 대조한다.
+
+현재 프로젝트 이름이 `compose-lab`인지 확인하고 볼륨까지 제거한다. `down -v`는 이 프로젝트의 컨테이너·네트워크와 선언된 볼륨을 제거하며, 호스트의 바인드 원본과 사용한 이미지는 남긴다. Compose down의 제거 범위
+
+`volume ls`의 `--filter label=com.docker.compose.project=compose-lab`는 Compose의 프로젝트 표식으로 이 랩의 볼륨만 골라 보여 준다.
+
+```powershell
+docker compose down -v
+docker volume ls --filter label=com.docker.compose.project=compose-lab
+```
+
+목록에 열 제목만 있고 데이터 행이 없으면 랩 볼륨이 제거된 상태다.
+
+같은 구성으로 다시 실행해 메모 응답과 실제 데이터 폴더를 확인한다.
+
+```powershell
+docker compose up -d
+curl.exe -i http://localhost:8082/files/memo.txt
+docker compose exec files python -c "from pathlib import Path; print(list(Path('/data').iterdir()))"
+docker volume inspect compose-lab_lab-data
+```
+
+메모 요청은 404이고 `/data` 목록은 `[]`이며, 같은 이름으로 생성된 새 볼륨은 비어 있다. 브라우저의 `http://localhost:8082/`를 강력 새로 고침하면 호스트에 남아 있는 화면 제목 `바인드 마운트 변경 확인`은 그대로 보인다.
+
+| 동작 | 컨테이너 | 이 랩의 이름 있는 볼륨 | 호스트의 바인드 원본 |
+| --- | --- | --- | --- |
+| `stop` → `start` | 같은 컨테이너 재사용 | 유지 | 유지 |
+| `down` → `up` | 제거 후 새로 생성 | 유지 후 재연결 | 유지 후 재연결 |
+| `down -v` | 제거 | 제거 | 유지 |
+
+### 실습 · 새 컨테이너와 공유 볼륨
+
+웹 서버는 요청을 기다리며 계속 실행되지만, 파일 생성처럼 한 번 수행하고 끝나는 작업도 컨테이너로 실행할 수 있다. 이런 작업은 끝난 뒤 `Exited (0)`으로 표시되면 정상 종료한 것이다.
+
+현재 `web`·`files`는 실행 중이고, 파일 서버의 `/data`에 연결된 `lab-data`는 비어 있다. 호스트의 화면 파일은 그대로 남아 있다. 여기에 메모를 한 번 만드는 `writer` 서비스를 추가한다.
+
+해당 writer컨테이너는 파일생성 명령어 실행 후 종료된다.
